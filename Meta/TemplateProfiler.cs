@@ -27,6 +27,20 @@ namespace Meta
 {
     public delegate void TaskFinishedCallback();
 
+    static class PaneExtensions
+    {
+        public static void WriteLine(this IVsOutputWindowPane pane, string message, params object[] args)
+        {
+            pane.Write(message + Environment.NewLine, args);
+        }
+
+        public static void Write(this IVsOutputWindowPane pane, string message, params object[] args)
+        {
+            string formatted = string.Format(message, args);
+            pane.OutputStringThreadSafe(formatted);
+        }
+    }
+
     class TemplateProfiler
     {
         private IActiveObject profiler;
@@ -90,7 +104,6 @@ namespace Meta
 
                 profileProcess.StartInfo.UseShellExecute = false;
                 profileProcess.StartInfo.FileName = "cmd.exe";
-                //profilePane.OutputStringThreadSafe("Command line: cmd.exe " + full_args + Environment.NewLine);
                 profileProcess.StartInfo.Arguments = full_args;
                 profileProcess.StartInfo.CreateNoWindow = true;
                 profileProcess.StartInfo.WorkingDirectory = starting_directory;
@@ -136,7 +149,6 @@ namespace Meta
                 
                 profileProcess.StartInfo.UseShellExecute = false;
                 profileProcess.StartInfo.FileName = "cmd.exe";
-                //profilePane.OutputStringThreadSafe("Command line: cmd.exe " + full_args + Environment.NewLine);
                 profileProcess.StartInfo.Arguments = full_args;
                 profileProcess.StartInfo.CreateNoWindow = true;
                 profileProcess.StartInfo.WorkingDirectory = starting_directory;
@@ -172,7 +184,6 @@ namespace Meta
             // Collect the net view command output.
             if (!String.IsNullOrEmpty(outLine.Data))
             {
-                //profilePane.OutputStringThreadSafe(Environment.NewLine + "  " + outLine.Data);
                 profile_output.WriteLine(outLine.Data);
             }
         }
@@ -183,7 +194,7 @@ namespace Meta
             // to write and an error file has been specified.
             if (!String.IsNullOrEmpty(errLine.Data))
             {
-                profilePane.OutputStringThreadSafe(errLine.Data);
+                profilePane.WriteLine(errLine.Data);
                 profile_output.WriteLine(errLine.Data);
             }
         }
@@ -196,7 +207,8 @@ namespace Meta
                     return;
 
                 profilePane.Clear();
-                profilePane.OutputStringThreadSafe("Profiling Instantiations on " + filename + ":" + Environment.NewLine + Environment.NewLine);
+                profilePane.WriteLine("Profiling Instantiations on {0}", filename);
+                profilePane.WriteLine("");
                 profilePane.Activate();
                 VCFile file = clTool.GetVCFile(filename);
                 string preprocessorArgs = clTool.GenerateCLCmdArgs(filename, false);
@@ -222,25 +234,26 @@ namespace Meta
                         //! Preprocess the file.
                         try
                         {
-                            profilePane.OutputStringThreadSafe("Instrumenting Code..." + Environment.NewLine);
+                            profilePane.WriteLine("Instrumenting Code...");
                             Instrument(clWithEnv, preprocessorArgs, workingDirectory, file.RelativePath, outputPreprocessed);
                             if (cancelProfile)
                             {
-                                profilePane.OutputStringThreadSafe(Environment.NewLine + "User canceled profile." + Environment.NewLine);
+                                profilePane.WriteLine(Environment.NewLine + "User canceled profile.");
                                 return;
                             }
                             if (!File.Exists(outputPreprocessed))
                                 throw new FileNotFoundException(outputPreprocessed);
                             NativeMethods.TemplateProfilePreprocess(outputPreprocessed, outputPreprocessedCpp);
+                            profilePane.WriteLine("Instrumentation completed.");
                         }
                         catch( FileNotFoundException /*ex*/ )
                         {
-                            profilePane.OutputStringThreadSafe("Unable to preprocess " + filename + ". Please check that the file compiles and try again." + Environment.NewLine );
+                            profilePane.WriteLine("Unable to preprocess {0}. Please check that the file compiles and try again.", filename);
                             return;
                         }
                         catch (System.Exception ex)
                         {
-                            profilePane.OutputStringThreadSafe(ex.Message);
+                            profilePane.WriteLine("0x{0:X}: {1}", Marshal.GetHRForException(ex), ex.Message);
                             return;
                         }
                         finally
@@ -251,17 +264,18 @@ namespace Meta
                         //! Now compile the output and put the output into another file to be input to the postprocessor.
                         try
                         {
-                            profilePane.OutputStringThreadSafe("Running Profile..." + Environment.NewLine);
+                            profilePane.WriteLine("Running Profile...");
                             Profile(clWithEnv, profileArgs, workingDirectory, outputPreprocessedCpp, outputProfile);
                             if (cancelProfile)
                             {
-                                profilePane.OutputStringThreadSafe(Environment.NewLine + "User canceled profile." + Environment.NewLine);
+                                profilePane.WriteLine(Environment.NewLine + "User canceled profile.");
                                 return;
                             }
+                            profilePane.WriteLine("Profiling completed.");
                         }
                         catch (System.Exception ex)
                         {
-                            profilePane.OutputStringThreadSafe(ex.Message);
+                            profilePane.WriteLine("0x{0:X}: {1}", Marshal.GetHRForException(ex), ex.Message);
                             return;
                         }
                         finally
@@ -272,18 +286,19 @@ namespace Meta
 
                         try
                         {
-                            profilePane.OutputStringThreadSafe("Finalizing Data..." + Environment.NewLine);
+                            profilePane.WriteLine("Finalizing data...");
                             IntStringDelegate log = new IntStringDelegate(profilePane.OutputStringThreadSafe);
                             NativeMethods.TemplateProfilePostProcess(outputProfile, log);
                             if (cancelProfile)
                             {
-                                profilePane.OutputStringThreadSafe(Environment.NewLine + "User canceled profile." + Environment.NewLine);
+                                profilePane.WriteLine(Environment.NewLine + "User canceled profile.");
                                 return;
                             }
+                            profilePane.WriteLine(Environment.NewLine + "Profile run completed.");
                         }
                         catch (System.Exception ex)
                         {
-                            profilePane.OutputStringThreadSafe(ex.Message);
+                            profilePane.WriteLine("0x{0:X}: {1}", Marshal.GetHRForException(ex), ex.Message);
                         }
                         finally
                         {
